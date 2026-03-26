@@ -1,0 +1,56 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+
+# Settings
+pydantic-settings==2.6.1
+pydantic[email]==2.10.3
+email-validator>=2.0.0
+
+# Document processing
+pymupdf==1.25.1
+python-multipart==0.0.19
+
+# LangChain / LangGraph
+langchain==0.3.13
+langchain-community==0.3.13
+langchain-openai==0.2.14
+langchain-text-splitters==0.3.3
+langgraph==0.2.60
+
+# OpenAI
+openai>=1.58.1
+
+# Embeddings + vector store
+sentence-transformers==3.3.1
+chromadb==0.5.23
+
+# AWS / LocalStack
+boto3>=1.35.0
+botocore>=1.35.0
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.28.1
+factory-boy==3.3.1
+aiosqlite==0.20.0
+moto[s3]>=5.0.0
+
+# Rate limiting
+slowapi==0.1.9
+
+# Linting / type checking
+ruff==0.8.4
+mypy==1.13.0

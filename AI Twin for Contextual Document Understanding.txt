@@ -1,0 +1,55 @@
+AI Twin for Contextual Document Understanding and Personal Knowledge Retrieval
+Objective
+To build an AI system that enables users to interact with their documents in a conversational manner, retrieving contextually accurate information via natural language. The system supports Retrieval-Augmented Generation (RAG), persistent memory, scoped querying, and knowledge segregation for both end-user interaction (AI Twin) and private experimentation (Playground).
+
+Functional Requirements
+1. Natural Language Query Interface
+Accept user queries in plain English through a chat interface.
+Retain context over multiple turns (follow-up questions, references).
+Resolve pronouns and vague references (e.g., “this clause”, “that document”).
+Support file-specific and multi-file querying.
+
+2. Document Ingestion
+Accept PDF files for upload.
+Parse and chunk documents for embedding.
+Generate vector embeddings using an embedding model.
+Store document metadata
+Allow document visibility to be set as:
+Global: visible in both AI Twin and Playground
+Private: visible only in Playground (isolated to uploader)
+
+3. Retrieval-Augmented Generation (RAG)
+Retrieve relevant document chunks from the vector store based on query intent.
+Combine results with LLM to generate grounded answers.
+Limit retrieval based on selected documents and their visibility scope.
+
+4. Knowledge Segregation
+Global documents are queryable from both AI Twin and Playground.
+Private documents are only available in Playground, visible only to the uploading user.
+The Playground provides access to both scopes, while the AI Twin limits access to global content only.
+
+5. File-Level and Scoped Querying (Priority: Low)
+Allow users to:
+Select individual or multiple documents to scope the context
+Limit retrieval and generation context to selected documents.
+
+6. Chat Memory and Session Persistence
+Maintain context within a session, including chat history and selected files.
+Store conversations with metadata.
+Allow users to resume and continue prior conversations.
+Use summarization to preserve longer chats within model token limits.
+
+7. Dual Interfaces (Priority: Low)
+AI Twin (End-User Mode)
+Accesses global documents only.
+Used by end users for querying validated, shared knowledge.
+Provides grounded answers with source awareness and optional references.
+Playground (Private Mode) 
+Developer or power-user-focused interface.
+Accesses both global and private documents.
+Used for uploading, testing, refining, and querying private documents.
+Supports prompt evaluation, document-specific QA, and exploration.
+Includes the ability to promote private documents to global scope.
+
+Note:
+While the system supports knowledge segregation and file-level querying conceptually, implementation of the Playground interface and document selection/filtering is not required for this phase. You may still embed documents with visibility tags (e.g., global vs private) to support future extensions, but only the AI Twin interface needs to be built at this stage.
