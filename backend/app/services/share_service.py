@@ -129,6 +129,7 @@ async def create_shared_conversation(
         owner_id=link.owner_id,
         session_id=session_id,
         title=f"Shared chat via {link.label or link.token[:8]}",
+        chat_mode="ai_twin",
     )
     db.add(conversation)
     await db.commit()

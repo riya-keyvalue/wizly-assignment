@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, Plus, Loader2 } from "lucide-react";
 import { conversationsApi } from "@/lib/api";
+import type { ChatMode } from "@/lib/chatMode";
+import { parseChatMode } from "@/lib/chatMode";
 import { cn } from "@/lib/utils";
 
 interface Conversation {
@@ -12,6 +14,7 @@ interface Conversation {
   title: string | null;
   session_id: string;
   created_at: string;
+  chat_mode?: string;
 }
 
 interface SidebarProps {
@@ -19,9 +22,17 @@ interface SidebarProps {
   onSelect?: (id: string) => void;
   isOpen: boolean;
   onClose: () => void;
+  /** Used when creating a conversation from this sidebar (matches current chat mode). */
+  chatModeForNew: ChatMode;
 }
 
-export default function Sidebar({ activeId, onSelect, isOpen, onClose }: SidebarProps) {
+export default function Sidebar({
+  activeId,
+  onSelect,
+  isOpen,
+  onClose,
+  chatModeForNew,
+}: SidebarProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -35,9 +46,11 @@ export default function Sidebar({ activeId, onSelect, isOpen, onClose }: Sidebar
   });
 
   const createMutation = useMutation({
-    mutationFn: () => conversationsApi.create(),
+    mutationFn: () =>
+      conversationsApi.create({ chat_mode: chatModeForNew }),
     onSuccess: (res) => {
-      const id = res.data.data.id;
+      const id = res.data.data.id as string;
+      queryClient.setQueryData(["conversation", id], res.data.data);
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       onSelect?.(id);
       onClose();
@@ -93,26 +106,44 @@ export default function Sidebar({ activeId, onSelect, isOpen, onClose }: Sidebar
             <p className="text-xs text-zinc-400 dark:text-zinc-500">No conversations yet</p>
           </div>
         ) : (
-          conversations.map((conv) => (
-            <button
-              key={conv.id}
-              onClick={() => {
-                onSelect?.(conv.id);
-                onClose();
-                router.push(`/chat?id=${conv.id}`);
-              }}
-              className={cn(
-                "w-full rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                activeId === conv.id
-                  ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900 font-medium"
-                  : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              )}
-            >
-              <span className="block truncate">
-                {conv.title ?? "New conversation"}
-              </span>
-            </button>
-          ))
+          conversations.map((conv) => {
+            const rowMode = parseChatMode(conv.chat_mode);
+            return (
+              <button
+                key={conv.id}
+                onClick={() => {
+                  onSelect?.(conv.id);
+                  onClose();
+                  router.push(`/chat?id=${conv.id}`);
+                }}
+                className={cn(
+                  "w-full rounded-lg border-l-[3px] py-2 pl-2.5 pr-3 text-left text-sm transition-colors",
+                  rowMode === "ai_twin"
+                    ? "border-l-emerald-500 dark:border-l-emerald-400"
+                    : "border-l-violet-500 dark:border-l-violet-400",
+                  activeId === conv.id
+                    ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900 font-medium"
+                    : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                )}
+              >
+                <span className="block truncate">
+                  {conv.title ?? "New conversation"}
+                </span>
+                <span
+                  className={cn(
+                    "mt-0.5 block text-[10px] font-medium uppercase tracking-wide",
+                    activeId === conv.id
+                      ? "text-zinc-300 dark:text-zinc-600"
+                      : rowMode === "ai_twin"
+                        ? "text-emerald-600/90 dark:text-emerald-400/90"
+                        : "text-violet-600/90 dark:text-violet-400/90"
+                  )}
+                >
+                  {rowMode === "ai_twin" ? "AI Twin" : "Playground"}
+                </span>
+              </button>
+            );
+          })
         )}
       </div>
     </div>

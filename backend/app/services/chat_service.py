@@ -24,12 +24,14 @@ async def create_conversation(
     db: AsyncSession,
     user_id: uuid.UUID,
     title: str | None = None,
+    chat_mode: str = "playground",
 ) -> Conversation:
     session_id = str(uuid.uuid4())
     conversation = Conversation(
         user_id=user_id,
         title=title,
         session_id=session_id,
+        chat_mode=chat_mode,
     )
     db.add(conversation)
     await db.commit()
@@ -218,6 +220,92 @@ async def stream_response(
         logger.info(f"Summarization persisted for conversation {conversation.id}")
 
     logger.info(f"Completed stream for conversation {conversation.id}")
+
+
+async def stream_owner_global_docs_response(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    query: str,
+) -> AsyncGenerator[str, None]:
+    """Stream owner chat using only globally published documents (same RAG scope as share links).
+
+    Private uploads are excluded. Matches ``stream_shared_response`` retrieval and generation,
+    but for the authenticated owner's conversation. Syncs LangGraph checkpoint when possible
+    so switching back to full retrieval in the same thread stays consistent.
+    """
+    conversation = await get_conversation(db, conversation_id, user_id)
+
+    user_message = Message(
+        conversation_id=conversation.id,
+        role=RoleEnum.user,
+        content=query,
+    )
+    db.add(user_message)
+    await db.commit()
+
+    if conversation.title is None:
+        conversation.title = query[:100]
+        await db.commit()
+
+    chunks = retrieve_global_for_owner(query=query, owner_id=str(user_id), top_k=5)
+    sources = [{"doc_id": c.doc_id, "filename": c.filename, "page": c.page_number} for c in chunks]
+
+    history = await _load_history(db, conversation.id)
+    gen_state: ConversationState = {
+        "messages": history,
+        "retrieved_chunks": chunks,
+        "query": query,
+        "session_id": conversation.session_id,
+        "user_id": str(user_id),
+        "summary": conversation.summary or "",
+        "sources": sources,
+    }
+
+    full_response_tokens: list[str] = []
+    try:
+        async for token in generate_node_streaming(gen_state):
+            full_response_tokens.append(token)
+            event = json.dumps({"type": "token", "content": token})
+            yield f"data: {event}\n\n"
+    except Exception as exc:
+        logger.error(f"Global-docs-only generation error: {exc}")
+        error_event = json.dumps({"type": "error", "content": str(exc)})
+        yield f"data: {error_event}\n\n"
+        return
+
+    if sources:
+        sources_event = json.dumps({"type": "sources", "sources": sources})
+        yield f"data: {sources_event}\n\n"
+
+    done_event = json.dumps({"type": "done"})
+    yield f"data: {done_event}\n\n"
+
+    full_response = "".join(full_response_tokens)
+    assistant_message = Message(
+        conversation_id=conversation.id,
+        role=RoleEnum.assistant,
+        content=full_response,
+        sources=sources if sources else None,
+    )
+    db.add(assistant_message)
+    await db.commit()
+
+    graph = get_compiled_graph()
+    config = _graph_config(conversation.session_id)
+    merged_messages = await _load_history(db, conversation.id)
+    try:
+        await graph.aupdate_state(
+            config,
+            {"messages": merged_messages, "generated_response": full_response},
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to sync LangGraph checkpoint after global-docs-only turn: %s",
+            exc,
+        )
+
+    logger.info(f"Completed global-docs-only stream for conversation {conversation.id}")
 
 
 async def stream_shared_response(

@@ -17,7 +17,10 @@ export interface ChatMessage {
   streaming?: boolean;
 }
 
-export function useStreamingChat(conversationId: string | null) {
+export function useStreamingChat(
+  conversationId: string | null,
+  globalDocsOnly: boolean = false
+) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +76,8 @@ export function useStreamingChat(conversationId: string | null) {
       abortRef.current = new AbortController();
       const { url, headers } = conversationsApi.streamFetch(
         conversationId,
-        query.trim()
+        query.trim(),
+        { globalDocsOnly }
       );
 
       try {
@@ -161,7 +165,7 @@ export function useStreamingChat(conversationId: string | null) {
         abortRef.current = null;
       }
     },
-    [conversationId, isStreaming]
+    [conversationId, isStreaming, globalDocsOnly]
   );
 
   const stopStreaming = useCallback(() => {

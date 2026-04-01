@@ -1,4 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
+import type { ChatMode } from "./chatMode";
 import { useAuthStore } from "./store";
 
 const BASE_URL =
@@ -97,13 +98,23 @@ export const authApi = {
 
 export const conversationsApi = {
   list: () => api.get("/conversations/"),
-  create: (title?: string) => api.post("/conversations/", { title }),
+  create: (opts?: { title?: string; chat_mode?: ChatMode }) =>
+    api.post("/conversations/", opts ?? {}),
+  get: (id: string) => api.get(`/conversations/${id}`),
   messages: (id: string) => api.get(`/conversations/${id}/messages`),
   // Returns URL + auth header object for use with fetch() streaming
-  streamFetch: (id: string, query: string) => {
+  streamFetch: (
+    id: string,
+    query: string,
+    options?: { globalDocsOnly?: boolean }
+  ) => {
     const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const token = useAuthStore.getState().accessToken;
-    const url = `${base}/conversations/${id}/stream?${new URLSearchParams({ query })}`;
+    const params = new URLSearchParams({ query });
+    if (options?.globalDocsOnly) {
+      params.set("global_docs_only", "true");
+    }
+    const url = `${base}/conversations/${id}/stream?${params.toString()}`;
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
     return { url, headers };

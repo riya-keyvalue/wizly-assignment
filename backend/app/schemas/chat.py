@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -32,6 +34,7 @@ class ChatStreamEvent(BaseModel):
 
 class ConversationCreate(BaseModel):
     title: str | None = None
+    chat_mode: Literal["playground", "ai_twin"] = "playground"
 
 
 class ConversationRead(BaseModel):
@@ -41,6 +44,7 @@ class ConversationRead(BaseModel):
     title: str | None
     session_id: str
     summary: str | None = None
+    chat_mode: str
     created_at: datetime
     updated_at: datetime
 

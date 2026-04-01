@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     postgres_password: str = Field(..., description="PostgreSQL password")
     postgres_db: str = Field(..., description="PostgreSQL database name")
     database_url: str = Field(..., description="Full async DB connection URL")
+    alembic_database_url: str | None = Field(
+        default=None,
+        description=(
+            "Optional URL for Alembic only. Use when DATABASE_URL uses a Docker hostname "
+            "(e.g. postgres) and you run migrations on the host (localhost)."
+        ),
+    )
 
     # JWT — secret must be set explicitly; lifetimes have sensible universal defaults
     jwt_secret_key: str = Field(..., description="JWT signing secret — set in .env")

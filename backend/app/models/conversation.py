@@ -17,6 +17,9 @@ class Conversation(Base, TimestampMixin):
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     session_id: Mapped[str] = mapped_column(String(128), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Owner chat: "playground" (private + global RAG) or "ai_twin" (global published only).
+    # Shared guest conversations use "ai_twin".
+    chat_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="playground")
     # Set only for shared (anonymous) conversations
     link_token: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("shareable_links.token", ondelete="CASCADE"), nullable=True

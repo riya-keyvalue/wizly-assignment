@@ -10,9 +10,15 @@ import type { ChatMessage } from "@/lib/hooks/useStreamingChat";
 interface ChatThreadProps {
   messages: ChatMessage[];
   isStreaming: boolean;
+  /** Replaces the default subtitle under “Ask your first question”. */
+  emptyDescription?: string;
 }
 
-export default function ChatThread({ messages, isStreaming }: ChatThreadProps) {
+export default function ChatThread({
+  messages,
+  isStreaming,
+  emptyDescription = "Start a conversation about the documents you've uploaded.",
+}: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Smooth scroll to bottom on new content
@@ -42,7 +48,7 @@ export default function ChatThread({ messages, isStreaming }: ChatThreadProps) {
           Ask your first question
         </p>
         <p className="mt-1.5 max-w-sm text-sm text-zinc-400 dark:text-zinc-500">
-          Start a conversation about the documents you&apos;ve uploaded.
+          {emptyDescription}
         </p>
       </div>
     );

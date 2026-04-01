@@ -12,8 +12,13 @@ from app.core.config import settings
 import app.models  # noqa: F401
 from app.models.base import Base
 
+
+def migration_database_url() -> str:
+    return settings.alembic_database_url or settings.database_url
+
+
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", migration_database_url())
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -22,7 +27,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = migration_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -40,7 +45,7 @@ def do_run_migrations(connection: object) -> None:
 
 
 async def run_migrations_online() -> None:
-    engine = create_async_engine(settings.database_url, echo=False)
+    engine = create_async_engine(migration_database_url(), echo=False)
     async with engine.begin() as connection:
         await connection.run_sync(do_run_migrations)
     await engine.dispose()
