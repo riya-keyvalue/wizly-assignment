@@ -17,10 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
@@ -62,16 +62,27 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://wizly:wizly@localhost:5432/wizly
       JWT_SECRET_KEY: ci-test-secret
       SECRET_KEY: ci-test-secret
+      POSTGRES_USER: wizly
+      POSTGRES_PASSWORD: wizly
+      POSTGRES_DB: wizly
       LITELLM_API_KEY: sk-fake-key-for-ci
       DEBUG: "true"
+      QDRANT_URL: http://localhost:6333
+      AWS_ACCESS_KEY_ID: ci
+      AWS_SECRET_ACCESS_KEY: ci
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://127.0.0.1:4566
+      S3_BUCKET_NAME: wizly-ci
+      SKIP_CHUNKER_WARMUP: "true"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
@@ -117,10 +128,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install safety
         run: pip install safety

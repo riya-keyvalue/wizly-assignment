@@ -1,6 +1,6 @@
 # AI Twin — Contextual Document Understanding
 
-An AI-powered assistant that lets users upload PDF documents and ask natural-language questions grounded in those documents. Built with FastAPI, LangGraph, ChromaDB, and Next.js.
+An AI-powered assistant that lets users upload PDF documents and ask natural-language questions grounded in those documents. Built with FastAPI, LangGraph, Qdrant, and Next.js.
 
 ---
 
@@ -22,13 +22,13 @@ An AI-powered assistant that lets users upload PDF documents and ask natural-lan
 │  ┌──────▼──────┐   ┌──────▼───────┐   ┌────────▼─────────┐  │
 │  │ Auth Service│   │ Doc Ingest   │   │  LangGraph Graph  │  │
 │  │  JWT + BCrypt│  │ PDF→Chunks   │   │  retrieve_node    │  │
-│  └─────────────┘   │ Embed→Chroma │   │  generate_node    │  │
+│  └─────────────┘   │ Embed→Qdrant │   │  generate_node    │  │
 │                    └──────┬───────┘   │  summarize_node   │  │
 │                           │           └────────┬─────────┘  │
 └───────────────────────────┼────────────────────┼────────────┘
                             │                    │
               ┌─────────────▼──┐      ┌──────────▼────────┐
-              │   ChromaDB     │      │  OpenAI / LiteLLM │
+              │   Qdrant       │      │  OpenAI / LiteLLM │
               │  global_docs   │      │  GPT-4o-mini       │
               │  private_docs  │      └───────────────────┘
               └────────────────┘
@@ -84,6 +84,7 @@ Services started:
 | Backend API | http://localhost:8000 |
 | API docs (Swagger) | http://localhost:8000/docs |
 | PostgreSQL | localhost:5432 |
+| Qdrant | http://localhost:6333 |
 
 ### 3. Run database migrations
 
@@ -105,7 +106,9 @@ docker compose exec backend alembic upgrade head
 | `LITELLM_API_KEY` | Yes | — | OpenAI / LiteLLM API key |
 | `LITELLM_BASE_URL` | No | `` | Custom LiteLLM proxy URL |
 | `EMBEDDING_MODEL` | No | `BAAI/bge-base-en-v1.5` | HuggingFace embedding model |
-| `CHROMA_PERSIST_DIR` | Yes | — | ChromaDB persistence path |
+| `EMBEDDING_DIMENSIONS` | No | `768` | Vector size (must match the embedding model) |
+| `QDRANT_URL` | Yes | — | Qdrant HTTP URL (e.g. `http://localhost:6333`, or `http://qdrant:6333` in Compose) |
+| `QDRANT_API_KEY` | No | — | Qdrant API key (if enabled on the server) |
 | `ALLOWED_ORIGINS` | No | `http://localhost:3000,http://localhost:3001` | CORS allowed origins (comma-separated) |
 | `LANGCHAIN_TRACING_V2` | No | `false` | Enable LangSmith tracing |
 | `LANGCHAIN_API_KEY` | No | — | LangSmith API key |
@@ -135,7 +138,7 @@ All endpoints return JSON. Protected endpoints require `Authorization: Bearer <a
 |---|---|---|---|
 | `POST` | `/documents/upload` | Yes | Upload a PDF (`multipart/form-data`: `file`, `visibility`) |
 | `GET` | `/documents/` | Yes | List documents for the current user |
-| `DELETE` | `/documents/{doc_id}` | Yes | Delete a document (removes from DB, ChromaDB, S3) |
+| `DELETE` | `/documents/{doc_id}` | Yes | Delete a document (removes from DB, Qdrant, object storage) |
 
 `visibility` values: `global` (queryable by AI Twin) or `private` (owner-only).
 
@@ -162,13 +165,15 @@ data: {"type": "done"}
 |---|---|---|---|
 | `GET` | `/health` | No | Health check |
 | `GET` | `/debug/checkpoint/{session_id}` | No | Inspect LangGraph checkpoint |
-| `GET` | `/debug/chroma` | No | Inspect ChromaDB collection counts |
+| `GET` | `/debug/qdrant` | No | Inspect Qdrant collection counts and sample metadata |
 
 ---
 
 ## Development
 
 ### Backend (without Docker)
+
+Run Qdrant locally (for example `docker compose up qdrant -d`, or `docker run -p 6333:6333 qdrant/qdrant`), set `QDRANT_URL=http://localhost:6333` in `.env`, then:
 
 ```bash
 cd backend
@@ -209,7 +214,7 @@ docker compose up -d --build frontend
 ## Security Notes
 
 - JWT tokens expire server-side; logout blacklists the JTI in PostgreSQL.
-- Private documents are stored in a separate ChromaDB collection, filtered by `user_id` — they are never exposed to other users or to the LLM.
+- Private documents are stored in a separate Qdrant collection, filtered by `user_id` — they are never exposed to other users or to the LLM.
 - The AI Twin chat endpoint exclusively queries the `global_docs` collection plus the authenticated user's own `private_docs`. No cross-user leakage is possible.
 - File uploads validate MIME type and extension server-side; max size is 20 MB.
 - Auth endpoints are rate-limited (10–20 req/min per IP).

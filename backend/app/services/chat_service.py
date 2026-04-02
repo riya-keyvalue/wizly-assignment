@@ -19,6 +19,10 @@ from app.services.rag_service import retrieve_global_for_owner
 
 logger = logging.getLogger(__name__)
 
+# Node id in app.graph.graph — required for acheckpoint updates when the thread has no prior run
+# (LangGraph raises "Ambiguous update, specify as_node" if omitted).
+_CHECKPOINT_SYNC_AS_NODE = "summarize_check"
+
 
 async def create_conversation(
     db: AsyncSession,
@@ -210,6 +214,7 @@ async def stream_response(
     await graph.aupdate_state(
         config,
         {"messages": updated_messages, "generated_response": full_response},
+        as_node=_CHECKPOINT_SYNC_AS_NODE,
     )
 
     # Persist summary to the DB if the graph produced one (summarize node ran)
@@ -298,6 +303,7 @@ async def stream_owner_global_docs_response(
         await graph.aupdate_state(
             config,
             {"messages": merged_messages, "generated_response": full_response},
+            as_node=_CHECKPOINT_SYNC_AS_NODE,
         )
     except Exception as exc:
         logger.warning(

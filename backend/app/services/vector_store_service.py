@@ -3,8 +3,17 @@ from __future__ import annotations
 import logging
 import uuid
 
-import chromadb
-from chromadb import Collection
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchValue,
+    PayloadSchemaType,
+    PointStruct,
+    VectorParams,
+)
 
 from app.core.config import settings
 from app.services.chunking_service import Chunk
@@ -14,26 +23,62 @@ logger = logging.getLogger(__name__)
 GLOBAL_COLLECTION = "global_docs"
 PRIVATE_COLLECTION = "private_docs"
 
-_client: chromadb.ClientAPI | None = None
+# Stable namespace for deterministic point IDs from (doc_id, chunk_index)
+_POINT_ID_NAMESPACE = uuid.UUID("018e2d6e-8000-7000-8000-000000000001")
+
+_client: QdrantClient | None = None
 
 
-def _get_client() -> chromadb.ClientAPI:
+def _get_client() -> QdrantClient:
     global _client
     if _client is None:
-        _client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
-        logger.info(f"ChromaDB client initialised at {settings.chroma_persist_dir}")
+        kwargs: dict = {"url": settings.qdrant_url}
+        if settings.qdrant_api_key:
+            kwargs["api_key"] = settings.qdrant_api_key
+        _client = QdrantClient(**kwargs)
+        logger.info("Qdrant client initialised (url=%s)", settings.qdrant_url)
     return _client
 
 
+def _stable_point_id(doc_id: uuid.UUID, chunk_index: int) -> uuid.UUID:
+    return uuid.uuid5(_POINT_ID_NAMESPACE, f"{doc_id}_{chunk_index}")
+
+
 class VectorStoreService:
-    def __init__(self, client: chromadb.ClientAPI | None = None) -> None:
+    def __init__(self, client: QdrantClient | None = None) -> None:
         self._client = client or _get_client()
 
-    def _collection(self, name: str) -> Collection:
-        return self._client.get_or_create_collection(
-            name=name,
-            metadata={"hnsw:space": "cosine"},
+    def _ensure_collection(self, name: str) -> None:
+        if self._client.collection_exists(name):
+            return
+        self._client.create_collection(
+            collection_name=name,
+            vectors_config=VectorParams(
+                size=settings.embedding_dimensions,
+                distance=Distance.COSINE,
+            ),
         )
+        self._client.create_payload_index(
+            collection_name=name,
+            field_name="doc_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+        self._client.create_payload_index(
+            collection_name=name,
+            field_name="user_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+        logger.info("Created Qdrant collection %r with dim=%s", name, settings.embedding_dimensions)
+
+    @staticmethod
+    def _query_filter(visibility: str, user_id: str | None) -> Filter | None:
+        if visibility == "private":
+            if not user_id:
+                return None
+            return Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))])
+        if visibility == "global" and user_id:
+            return Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))])
+        return None
 
     def upsert(
         self,
@@ -45,34 +90,45 @@ class VectorStoreService:
         user_id: str,
     ) -> None:
         if not chunks:
-            logger.warning(f"No chunks to upsert for doc {doc_id} — skipping ChromaDB write")
+            logger.warning("No chunks to upsert for doc %s — skipping Qdrant write", doc_id)
             return
         collection_name = GLOBAL_COLLECTION if visibility == "global" else PRIVATE_COLLECTION
-        col = self._collection(collection_name)
-        ids = [f"{doc_id}_{c.chunk_index}" for c in chunks]
-        metadatas = [
-            {
+        self._ensure_collection(collection_name)
+        points = []
+        for chunk, emb in zip(chunks, embeddings, strict=True):
+            pid = _stable_point_id(doc_id, chunk.chunk_index)
+            payload = {
                 "doc_id": str(doc_id),
                 "filename": filename,
-                "page_number": c.page_number,
-                "chunk_index": c.chunk_index,
+                "page_number": chunk.page_number,
+                "chunk_index": chunk.chunk_index,
+                "start_index": chunk.start_index,
+                "end_index": chunk.end_index,
+                "token_count": chunk.token_count,
                 "visibility": visibility,
                 "user_id": user_id,
+                "text": chunk.text,
             }
-            for c in chunks
-        ]
-        documents = [c.text for c in chunks]
-        col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
-        logger.info(f"Upserted {len(chunks)} chunks for doc {doc_id} into '{collection_name}'")
+            points.append(PointStruct(id=str(pid), vector=emb, payload=payload))
+        self._client.upsert(collection_name=collection_name, points=points)
+        logger.info("Upserted %s chunks for doc %s into %r", len(chunks), doc_id, collection_name)
 
     def delete_by_doc_id(self, doc_id: uuid.UUID, visibility: str) -> None:
         collection_name = GLOBAL_COLLECTION if visibility == "global" else PRIVATE_COLLECTION
+        if not self._client.collection_exists(collection_name):
+            return
         try:
-            col = self._collection(collection_name)
-            col.delete(where={"doc_id": str(doc_id)})
-            logger.info(f"Deleted chunks for doc {doc_id} from '{collection_name}'")
+            self._client.delete(
+                collection_name=collection_name,
+                points_selector=FilterSelector(
+                    filter=Filter(
+                        must=[FieldCondition(key="doc_id", match=MatchValue(value=str(doc_id)))]
+                    )
+                ),
+            )
+            logger.info("Deleted chunks for doc %s from %r", doc_id, collection_name)
         except Exception as exc:
-            logger.warning(f"Could not delete chunks for doc {doc_id}: {exc}")
+            logger.warning("Could not delete chunks for doc %s: %s", doc_id, exc)
 
     def query(
         self,
@@ -82,56 +138,68 @@ class VectorStoreService:
         user_id: str | None = None,
     ) -> list[dict]:
         collection_name = GLOBAL_COLLECTION if visibility == "global" else PRIVATE_COLLECTION
-        col = self._collection(collection_name)
-
-        # Private collection: always filtered by owner user_id.
-        # Global collection: unfiltered by default; optionally scoped to a specific owner
-        # (used by share-link sessions to restrict retrieval to that owner's global docs).
-        where: dict | None = None
-        if visibility == "private":
-            if not user_id:
-                logger.warning("Private query attempted without user_id — returning empty result")
-                return []
-            where = {"user_id": user_id}
-        elif visibility == "global" and user_id:
-            where = {"user_id": user_id}
-
-        count = col.count()
-        if count == 0:
+        if not self._client.collection_exists(collection_name):
             return []
 
-        # When a where filter is applied, col.count() returns the total collection
-        # size (all users), not the filtered count. ChromaDB 0.5.x raises
-        # InvalidArgumentError if n_results > number of matching documents.
-        # Pre-fetch the filtered IDs to get the true upper bound.
-        if where:
-            filtered_ids = col.get(where=where, include=[], limit=count)["ids"]
-            effective_count = len(filtered_ids)
-            logger.info(
-                f"Filtered query: where={where}, total_docs={count}, "
-                f"matching_docs={effective_count}, requested_top_k={top_k}"
-            )
-            if effective_count == 0:
-                logger.info(f"No chunks match filter {where} — returning empty")
-                return []
-            n = min(top_k, effective_count)
-        else:
-            effective_count = count
-            n = min(top_k, effective_count)
+        q_filter = self._query_filter(visibility, user_id)
+        if visibility == "private" and q_filter is None:
+            logger.warning("Private query attempted without user_id — returning empty result")
+            return []
 
-        results = col.query(
-            query_embeddings=[embedding],
-            n_results=n,
-            include=["documents", "metadatas", "distances"],
-            where=where,
+        total = self._client.count(collection_name=collection_name, exact=True).count
+        if total == 0:
+            return []
+
+        if q_filter is not None:
+            filtered = self._client.count(
+                collection_name=collection_name,
+                count_filter=q_filter,
+                exact=True,
+            ).count
+            if filtered == 0:
+                logger.info("No chunks match filter for %r — returning empty", collection_name)
+                return []
+            n = min(top_k, filtered)
+        else:
+            n = min(top_k, total)
+
+        response = self._client.query_points(
+            collection_name=collection_name,
+            query=embedding,
+            query_filter=q_filter,
+            limit=n,
+            with_payload=True,
         )
-        chunks = []
-        if results["documents"]:
-            for doc, meta, dist in zip(
-                results["documents"][0],
-                results["metadatas"][0],
-                results["distances"][0],
-                strict=True,
-            ):
-                chunks.append({**meta, "text": doc, "score": 1.0 - dist})
+
+        chunks: list[dict] = []
+        for point in response.points:
+            if point.payload is None:
+                continue
+            payload = dict(point.payload)
+            text = str(payload.pop("text", ""))
+            chunks.append({**payload, "text": text, "score": float(point.score or 0.0)})
         return chunks
+
+    def collection_point_count(self, collection_name: str) -> int:
+        if not self._client.collection_exists(collection_name):
+            return 0
+        return self._client.count(collection_name=collection_name, exact=True).count
+
+    def collection_sample_payloads(
+        self, collection_name: str, limit: int = 5
+    ) -> tuple[list[str], list[dict]]:
+        if not self._client.collection_exists(collection_name):
+            return [], []
+        points, _cursor = self._client.scroll(
+            collection_name=collection_name,
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        ids = [str(p.id) for p in points]
+        metas = []
+        for p in points:
+            pl = dict(p.payload) if p.payload else {}
+            pl.pop("text", None)
+            metas.append(pl)
+        return ids, metas

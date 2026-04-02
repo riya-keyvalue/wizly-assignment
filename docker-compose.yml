@@ -34,6 +34,15 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   backend:
     build:
       context: ./backend
@@ -42,18 +51,19 @@ services:
     env_file:
       - .env
     environment:
-      # Inside Docker, reach MinIO by service name instead of localhost
       AWS_ENDPOINT_URL: http://minio:9000
+      QDRANT_URL: http://qdrant:6333
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - chroma_data:/app/chroma
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -77,4 +87,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
-  chroma_data:
+  qdrant_data:

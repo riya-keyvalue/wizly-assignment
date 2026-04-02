@@ -33,7 +33,8 @@ openai>=1.58.1
 
 # Embeddings + vector store
 sentence-transformers==3.3.1
-chromadb==0.5.23
+chonkie[semantic]==1.6.1
+qdrant-client==1.12.1
 
 # AWS / LocalStack
 boto3>=1.35.0

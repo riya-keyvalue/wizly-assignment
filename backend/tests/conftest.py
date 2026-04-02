@@ -1,5 +1,25 @@
 from __future__ import annotations
 
+import os
+
+# Default env for Settings() before any `app` import; does not override existing variables.
+for _key, _val in {
+    "SECRET_KEY": "pytest-secret-key-at-least-32-characters-long",
+    "JWT_SECRET_KEY": "pytest-jwt-secret-key-32-characters-min",
+    "POSTGRES_USER": "wizly",
+    "POSTGRES_PASSWORD": "wizly",
+    "POSTGRES_DB": "wizly",
+    "DATABASE_URL": "postgresql+asyncpg://wizly:wizly@localhost:5432/wizly",
+    "QDRANT_URL": "http://localhost:6333",
+    "AWS_ACCESS_KEY_ID": "test",
+    "AWS_SECRET_ACCESS_KEY": "test",
+    "AWS_DEFAULT_REGION": "us-east-1",
+    "AWS_ENDPOINT_URL": "http://127.0.0.1:4566",
+    "S3_BUCKET_NAME": "test-bucket",
+    "SKIP_CHUNKER_WARMUP": "true",
+}.items():
+    os.environ.setdefault(_key, _val)
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

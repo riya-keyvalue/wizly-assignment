@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Menu, AlertCircle, X } from "lucide-react";
@@ -57,19 +57,10 @@ export default function ChatPage() {
     },
   });
 
-  /** Mode used for this thread (API / streaming). When there is no open thread, follows the toggle. */
-  const activeMode: ChatMode = useMemo(() => {
-    if (!conversationId) return draftMode;
-    const raw = activeConversation?.chat_mode;
-    if (raw != null) return parseChatMode(raw);
-    const fromList = queryClient
-      .getQueryData<ConversationRow[]>(["conversations"])
-      ?.find((c) => c.id === conversationId)?.chat_mode;
-    if (fromList != null) return parseChatMode(fromList);
-    return draftMode;
-  }, [conversationId, draftMode, activeConversation?.chat_mode, queryClient]);
-
-  const globalDocsOnly = activeMode === "ai_twin";
+  // Toggle (`draftMode`) drives streaming and UI. It is initialized from the server when
+  // opening a thread; changing it updates `global_docs_only` for playground threads (see
+  // backend stream handler). Server `chat_mode === "ai_twin"` still forces twin scope via OR.
+  const globalDocsOnly = draftMode === "ai_twin";
 
   const {
     messages,
@@ -92,10 +83,14 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!conversationId) return;
-    const raw = activeConversation?.chat_mode;
+    const raw =
+      activeConversation?.chat_mode ??
+      queryClient
+        .getQueryData<ConversationRow[]>(["conversations"])
+        ?.find((c) => c.id === conversationId)?.chat_mode;
     if (raw == null) return;
     setDraftMode(parseChatMode(raw));
-  }, [conversationId, activeConversation?.chat_mode]);
+  }, [conversationId, activeConversation?.chat_mode, queryClient]);
 
   const handleModeChange = useCallback((next: ChatMode) => {
     setDraftMode(next);
@@ -164,18 +159,18 @@ export default function ChatPage() {
         <div
           className={cn(
             "flex flex-1 flex-col min-h-0 overflow-hidden w-full mx-auto border-l-[3px] transition-[border-color] duration-200",
-            activeMode === "playground" &&
+            draftMode === "playground" &&
               "border-l-violet-500 dark:border-l-violet-400",
-            activeMode === "ai_twin" &&
+            draftMode === "ai_twin" &&
               "border-l-emerald-500 dark:border-l-emerald-400"
           )}
         >
           <div
             className={cn(
               "shrink-0 flex flex-col items-center gap-1 border-b px-4 py-2.5 transition-colors duration-200",
-              activeMode === "playground" &&
+              draftMode === "playground" &&
                 "border-violet-200 bg-gradient-to-b from-violet-50 to-violet-50/30 dark:border-violet-800/70 dark:from-violet-950/50 dark:to-violet-950/20",
-              activeMode === "ai_twin" &&
+              draftMode === "ai_twin" &&
                 "border-emerald-200 bg-gradient-to-b from-emerald-50 to-emerald-50/30 dark:border-emerald-800/70 dark:from-emerald-950/50 dark:to-emerald-950/20"
             )}
           >
@@ -218,31 +213,24 @@ export default function ChatPage() {
             <p
               className={cn(
                 "text-[10px] font-medium uppercase tracking-wide",
-                activeMode === "playground" &&
+                draftMode === "playground" &&
                   "text-violet-600/90 dark:text-violet-400",
-                activeMode === "ai_twin" &&
+                draftMode === "ai_twin" &&
                   "text-emerald-700/90 dark:text-emerald-400"
               )}
             >
-              {activeMode === "playground"
+              {draftMode === "playground"
                 ? "Private & global documents"
                 : "Global published only"}
             </p>
-            {conversationId && draftMode !== activeMode && (
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 text-center max-w-xs">
-                This chat uses {activeMode === "ai_twin" ? "AI Twin" : "Playground"}.
-                New chats from the sidebar will use{" "}
-                {draftMode === "ai_twin" ? "AI Twin" : "Playground"}.
-              </p>
-            )}
           </div>
 
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col transition-colors duration-200",
-              activeMode === "playground" &&
+              draftMode === "playground" &&
                 "bg-violet-50/25 dark:bg-violet-950/10",
-              activeMode === "ai_twin" &&
+              draftMode === "ai_twin" &&
                 "bg-emerald-50/25 dark:bg-emerald-950/10"
             )}
           >
@@ -250,7 +238,7 @@ export default function ChatPage() {
               messages={messages}
               isStreaming={isStreaming}
               emptyDescription={
-                activeMode === "ai_twin"
+                draftMode === "ai_twin"
                   ? "Questions use only your globally published documents — the same scope as share links."
                   : "Start a conversation about the documents you've uploaded."
               }
@@ -260,9 +248,9 @@ export default function ChatPage() {
           <ChatInput
             onSend={handleSend}
             disabled={isStreaming}
-            accent={activeMode === "playground" ? "playground" : "ai_twin"}
+            accent={draftMode === "playground" ? "playground" : "ai_twin"}
             footnote={
-              activeMode === "ai_twin"
+              draftMode === "ai_twin"
                 ? "Answers grounded in your globally published documents only."
                 : "Answers grounded in your uploaded documents."
             }

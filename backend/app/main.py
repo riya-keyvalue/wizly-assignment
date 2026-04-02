@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,11 +22,22 @@ if settings.LANGCHAIN_TRACING_V2 and settings.LANGCHAIN_API_KEY:
     os.environ.setdefault("LANGCHAIN_PROJECT", settings.LANGCHAIN_PROJECT)
     logger.info(f"LangSmith tracing enabled — project: {settings.LANGCHAIN_PROJECT}")
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if not settings.skip_chunker_warmup:
+        from app.services.chunking_service import get_semantic_chunker
+
+        get_semantic_chunker()
+    yield
+
+
 app = FastAPI(
     title="Wizly",
     description="Your AI Twin",
     version="0.1.0",
     debug=settings.debug,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -81,22 +93,25 @@ async def debug_checkpoint(session_id: str) -> dict:
         return {"session_id": session_id, "error": str(exc)}
 
 
-@app.get("/debug/chroma")
-async def debug_chroma() -> dict:
-    """Inspect ChromaDB collection counts and a sample of stored chunk IDs."""
-    from app.services.vector_store_service import VectorStoreService
+@app.get("/debug/qdrant")
+async def debug_qdrant() -> dict:
+    """Inspect Qdrant collection point counts and a sample of payload (without full text)."""
+    from app.services.vector_store_service import (
+        GLOBAL_COLLECTION,
+        PRIVATE_COLLECTION,
+        VectorStoreService,
+    )
 
     vs = VectorStoreService()
-    result = {}
-    for name in ("global_docs", "private_docs"):
+    result: dict[str, object] = {}
+    for name in (GLOBAL_COLLECTION, PRIVATE_COLLECTION):
         try:
-            col = vs._collection(name)
-            count = col.count()
-            sample = col.get(limit=5, include=["metadatas"])
+            count = vs.collection_point_count(name)
+            sample_ids, sample_metadata = vs.collection_sample_payloads(name, limit=5)
             result[name] = {
                 "count": count,
-                "sample_ids": sample["ids"],
-                "sample_metadata": sample["metadatas"],
+                "sample_ids": sample_ids,
+                "sample_metadata": sample_metadata,
             }
         except Exception as exc:
             result[name] = {"error": str(exc)}

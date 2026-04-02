@@ -28,7 +28,6 @@ backend/.venv/
 
 # Upload / vector store data
 backend/uploads/
-backend/chroma/
 
 # Node
 frontend/node_modules/

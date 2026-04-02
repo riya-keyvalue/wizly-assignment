@@ -45,8 +45,11 @@ class Settings(BaseSettings):
     LITELLM_API_KEY: str = ""
     LITELLM_BASE_URL: str = ""
 
-    # CORS — comma-separated list of allowed origins; defaults to localhost dev ports
-    allowed_origins: str = "http://localhost:3000,http://localhost:3001"
+    # CORS — comma-separated origins. localhost vs 127.0.0.1 are different hosts in browsers.
+    allowed_origins: str = (
+        "http://localhost:3000,http://localhost:3001,"
+        "http://127.0.0.1:3000,http://127.0.0.1:3001"
+    )
 
     # LangSmith tracing — optional; set LANGCHAIN_TRACING_V2=true to enable
     LANGCHAIN_TRACING_V2: bool = False
@@ -67,9 +70,16 @@ class Settings(BaseSettings):
 
     # Embeddings — model name has a stable default; can be overridden in .env
     embedding_model: str = "BAAI/bge-base-en-v1.5"
+    embedding_dimensions: int = 768
 
-    # ChromaDB — path differs between local and Docker; override in .env
-    chroma_persist_dir: str = Field(..., description="ChromaDB persistence directory")
+    # Semantic chunking (Chonkie) — must use the same embedding model family as ingestion/embeddings
+    chunk_similarity_threshold: float = Field(default=0.75, gt=0.0, lt=1.0)
+    chunk_max_tokens: int = Field(default=512, ge=32)
+    skip_chunker_warmup: bool = False
+
+    # Qdrant — URL differs between local and Docker; optional API key in production
+    qdrant_url: str = Field(..., description="Qdrant HTTP URL (e.g. http://localhost:6333)")
+    qdrant_api_key: str = ""
 
     # S3 / LocalStack — all values must come from .env
     aws_access_key_id: str = Field(..., description="AWS / LocalStack access key")
